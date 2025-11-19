@@ -1,5 +1,5 @@
 # Use Node 18 LTS
-FROM node:18-bullseye-slim AS builder
+FROM node:25-bullseye-slim AS builder
 
 
 # Create app directory
@@ -24,7 +24,7 @@ RUN npm run build
 
 
 # Final image
-FROM node:18-bullseye-slim
+FROM node:25-bullseye-slim
 WORKDIR /app
 
 
