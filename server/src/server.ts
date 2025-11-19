@@ -1,0 +1,185 @@
+import express, { Request, Response } from "express";
+import http from "node:http";
+import { Server, Socket } from "socket.io";
+import path from "node:path";
+import {SocketCallback, JoinRoomPayload, RoomState, Submission, SubmitItemPayload, StartGamePayload} from "./types";
+import { v6 as uuidv6 } from 'uuid';
+import {roomStateToStatus} from "./helper";
+
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
+
+const rooms = new Map<string, RoomState>();
+
+function createRoom(name: string, leaderSocketId: string | null) {
+    let roomId = uuidv6()
+    const room: RoomState = {
+        id: roomId,
+        roomName: name,
+        gameType: "cardpicker",
+        leader: leaderSocketId,
+        players: {},
+        submissions: [],
+        completed: [],
+        state: "waiting"
+    };
+    rooms.set(roomId, room);
+}
+
+function ensureRoomByName(roomName: string): RoomState {
+    for (const [_, room] of rooms.entries()) {
+        if (room.roomName === roomName) {
+            return room;
+        }
+    }
+    // Create new room if none found, then look it up again
+    createRoom(roomName, null);
+    return ensureRoomByName(roomName)
+}
+
+function ensureRoom(id: string): RoomState {
+    if (!rooms.has(id)) createRoom(id, null);
+    return rooms.get(id)!;
+}
+
+// ---------------- SOCKET.IO ----------------
+
+io.on("connection", (socket: Socket) => {
+    console.log("conn", socket.id);
+
+    // --- JOIN ROOM ---
+    socket.on("join_room", (payload: JoinRoomPayload, cb?: SocketCallback) => {
+        const { roomName, playerName } = payload;
+        const room = ensureRoomByName(roomName);
+        socket.join(room.id);
+
+        if (!room.leader) room.leader = socket.id;
+        room.players[socket.id] = { name: playerName, isLeader: room.leader == socket.id };
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    });
+
+    socket.on("submit_item", (payload: SubmitItemPayload, cb?: SocketCallback) => {
+        const room = ensureRoom(payload.roomId);
+
+        if(room.state != "waiting") {
+            return cb?.({ ok: false, error: "game not in waiting state" });
+        }
+
+        const entry: Submission = {
+            id: uuidv6(),
+            socketId: socket.id,
+            content: payload.content,
+            submitter: room.players[socket.id]?.name ?? "Anon"
+        };
+        room.submissions.push(entry);
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    });
+
+    socket.on("start_game", (payload: StartGamePayload, cb?: SocketCallback)=> {
+        const room = ensureRoom(payload.roomId);
+
+        if(room.state != "waiting") {
+            return cb?.({ ok: false, error: "game not in waiting state" });
+        }
+        if (room.leader !== socket.id) {
+            return cb?.({ ok: false, error: "not leader" });
+        }
+        if (room.submissions.length === 0) {
+            return cb?.({ok: false, error: "no balls submitted"});
+        }
+
+        room.state = "running"
+        room.completed = [];
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    });
+
+    // // --- START SPIN ---
+    // socket.on(
+    //     "start_spin",
+    //     ({ roomId }: { roomId: string }, cb?: Function) => {
+    //         const room = ensureRoom(roomId);
+    //
+    //         if (room.leader !== socket.id)
+    //             return cb?.({ ok: false, error: "not leader" });
+    //
+    //         if (room.submissions.length === 0)
+    //             return cb?.({ ok: false, error: "no cards" });
+    //
+    //         const remaining = room.submissions.filter(
+    //             (s) => !room.drawn.includes(s.id)
+    //         );
+    //         if (remaining.length === 0) {
+    //             room.drawn = [];
+    //         }
+    //
+    //         const pool = room.submissions.filter(
+    //             (s) => !room.drawn.includes(s.id)
+    //         );
+    //
+    //         const chosen = pool[Math.floor(Math.random() * pool.length)];
+    //         room.drawn.push(chosen.id);
+    //
+    //         // Notify clients to start spinning animation
+    //         io.to(roomId).emit("spin_started", { chosenId: chosen.id });
+    //
+    //         setTimeout(() => {
+    //             io.to(roomId).emit("reveal_card", {
+    //                 card: {
+    //                     id: chosen.id,
+    //                     name: chosen.name,
+    //                     content: chosen.content
+    //                 }
+    //             });
+    //         }, 2200);
+    //
+    //         cb?.({ ok: true, chosenId: chosen.id });
+    //     }
+    // );
+
+    // --- DISCONNECT ---
+    socket.on("disconnecting", () => {
+        for (const roomId of socket.rooms) {
+            if (roomId === socket.id) continue;
+
+            const room = rooms.get(roomId);
+            if (!room) continue;
+
+            delete room.players[socket.id];
+
+            if (room.leader === socket.id) {
+                room.leader = Object.keys(room.players)[0] ?? null;
+            }
+
+            const roomData = roomStateToStatus(room)
+            io.to(room.id).emit("room_update", roomData);
+        }
+    });
+});
+
+// ---------------- EXPRESS STATIC FILES ----------------
+
+app.use(express.static(path.join(__dirname, "..", "client", "dist")));
+
+app.get("/", (_: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, "..", "client", "dist", "index.html"));
+});
+
+// ---------------- START SERVER ----------------
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+    console.log("Server listening on", PORT);
+});
