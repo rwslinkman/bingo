@@ -132,6 +132,13 @@ export default function App() {
         }
     };
 
+    const onBingoMachineRotate = ({ currentAngle, degrees, totalRotation }) => {
+        console.log(currentAngle, degrees, totalRotation);
+        if (degrees >= 360 * 5) {
+            console.log("5 full rotations done!");
+        }
+    };
+
     if (!joined) {
         // Join screen
         return (
@@ -201,8 +208,13 @@ export default function App() {
             </aside>
 
             <main style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {/* BingoMachine receives the server-chosen id as trigger so it can play the animation */}
-                <BingoMachine trigger={lastChosenId} />
+                <BingoMachine
+                    canControl={isLeader}
+                    onRotate={(state) => {
+                        console.log(state)
+                        socket.emit("bingo_rotate", state)
+                    }
+                }/>
 
                 {/*/!* Reveal overlay *!/*/}
                 {/*{revealedCard && (*/}
