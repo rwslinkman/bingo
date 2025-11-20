@@ -33,10 +33,11 @@ const BingoMachine = forwardRef(function BingoMachine({ canControl, onRotate }, 
 
         const forward = delta > 0;
 
-        // Halfway check
+        // Halfway check: only count if actually passing π radians in forward motion
         if (forward && !hasPassedHalfwayRef.current) {
-            if ((prev < HALF_MARKER && curr >= HALF_MARKER) || (prev > HALF_MARKER && curr < HALF_MARKER && delta > 0)) {
+            if (prev < HALF_MARKER && curr >= HALF_MARKER) {
                 hasPassedHalfwayRef.current = true;
+                console.log("halfway passed");
             }
         }
 
@@ -47,9 +48,10 @@ const BingoMachine = forwardRef(function BingoMachine({ canControl, onRotate }, 
             prev < LAP_MARKER + LAP_THRESHOLD &&
             curr >= LAP_MARKER;
 
-        if (crossedLap) {
+        if (crossedLap && hasPassedHalfwayRef.current) {
             rotationCountRef.current += 1;
             hasPassedHalfwayRef.current = false;
+            console.log("rotation")
 
             if (onRotate) {
                 onRotate({
@@ -71,10 +73,10 @@ const BingoMachine = forwardRef(function BingoMachine({ canControl, onRotate }, 
     useEffect(() => {
         const { Engine, Render, Runner, World, Bodies, Body, Mouse, MouseConstraint, Events } = Matter;
 
-        const width = 400;
-        const height = 400;
-        const drumRadius = 150;
-        const knobRadius = 14;
+        const width = 800;
+        const height = 800;
+        const drumRadius = 300;
+        const knobRadius = 28;
 
         const engine = Engine.create();
         const world = engine.world;
@@ -206,7 +208,7 @@ const BingoMachine = forwardRef(function BingoMachine({ canControl, onRotate }, 
         };
     }, [canControl, onRotate]);
 
-    return <div ref={sceneRef} style={{ width: 400, height: 400 }} />;
+    return <div ref={sceneRef} style={{ width: 800, height: 800 }} />;
 });
 
 export default BingoMachine;
