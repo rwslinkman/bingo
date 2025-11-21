@@ -13,6 +13,8 @@ export function roomStateToStatus(input: RoomState): RoomStatus {
                 submitter: s.submitter
             };
         }),
-        state: input.state
+        state: input.state,
+        currentAngle: input.currentAngle,
+        totalRotations: input.totalRotations
     }
 }

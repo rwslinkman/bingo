@@ -24,6 +24,8 @@ export interface RoomState {
     submissions: Submission[];
     completed: Submission[];
     state: "waiting" | "running" | "finished";
+    currentAngle: number;
+    totalRotations: number;
 }
 
 export interface RoomStatus {
@@ -32,7 +34,9 @@ export interface RoomStatus {
     gameType: "default" | "cardpicker";
     leader: string | null;
     players: PlayerInfo[];
-    balls: BingoBall[]
+    balls: BingoBall[];
+    currentAngle: number;
+    totalRotations: number;
     state: "waiting" | "running" | "finished";
 }
 
@@ -56,4 +60,10 @@ export interface SubmitItemPayload {
 
 export interface StartGamePayload {
     roomId: string;
+}
+
+export interface BingoRotationPayload {
+    roomId: string,
+    angle: number;
+    rotations: number;
 }

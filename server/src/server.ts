@@ -2,7 +2,10 @@ import express, { Request, Response } from "express";
 import http from "node:http";
 import { Server, Socket } from "socket.io";
 import path from "node:path";
-import {SocketCallback, JoinRoomPayload, RoomState, Submission, SubmitItemPayload, StartGamePayload} from "./types";
+import {
+    SocketCallback, JoinRoomPayload, RoomState, Submission, SubmitItemPayload, StartGamePayload,
+    BingoRotationPayload
+} from "./types";
 import { v6 as uuidv6 } from 'uuid';
 import {roomStateToStatus} from "./helper";
 
@@ -25,6 +28,8 @@ function createRoom(name: string, leaderSocketId: string | null) {
         players: {},
         submissions: [],
         completed: [],
+        currentAngle: 0,
+        totalRotations: 0,
         state: "waiting"
     };
     rooms.set(roomId, room);
@@ -105,6 +110,24 @@ io.on("connection", (socket: Socket) => {
         io.to(room.id).emit("room_update", roomData);
         cb?.({ ok: true, room: roomData });
     });
+
+    socket.on("bingo_rotate", (payload: BingoRotationPayload, cb?: SocketCallback)=> {
+        const room = ensureRoom(payload.roomId);
+
+        if(room.state != "running") {
+            return cb?.({ ok: false, error: "game not in running state" });
+        }
+        if (room.leader !== socket.id) {
+            return cb?.({ ok: false, error: "not leader" });
+        }
+
+        room.currentAngle = payload.angle;
+        room.totalRotations = payload.rotations;
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    })
 
     // // --- START SPIN ---
     // socket.on(

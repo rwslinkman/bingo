@@ -1,8 +1,9 @@
 // client/src/App.jsx
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useRef, useState} from "react";
 import { io } from "socket.io-client";
 import BingoMachine from "./components/BingoMachine";
 import CardReveal from "./components/CardReveal";
+import {throttle} from "lodash/function";
 
 // connect to same origin
 const socket = io("http://localhost:3000");
@@ -12,6 +13,7 @@ function randomPlayerName() {
 }
 
 export default function App() {
+    const bingoRef = useRef(null);
     // join / identity
     const [roomId, setRoomId] = useState("");
     const [roomName, setRoomName] = useState("room-1");
@@ -24,10 +26,9 @@ export default function App() {
     const [players, setPlayers] = useState([]);
     const [submissions, setSubmissions] = useState([]);
     const [isLeader, setIsLeader] = useState(false);
-
-    // spin / reveal
-    const [lastChosenId, setLastChosenId] = useState(null);
-    const [revealedCard, setRevealedCard] = useState(null);
+    // game elements
+    const [totalRotations, setTotalRotations] = useState(0);
+    const [currentAngle, setCurrentAngle] = useState(0);
 
     // set up socket listeners once
     useEffect(() => {
@@ -39,28 +40,15 @@ export default function App() {
         socket.on("room_update", (payload) => {
             if (!payload) return;
 
-            console.log(payload);
-            setRoomId(payload.id)
-            setRoomName(payload.roomName)
-            setGameType(payload.gameType)
+            setRoomId(payload.id);
+            setRoomName(payload.roomName);
+            setGameType(payload.gameType);
             setIsLeader(Boolean(payload.leader));
             setPlayers(payload.players || []);
             setSubmissions(payload.balls || []);
             setState(payload.state)
-
-            console.log(submissions);
-        });
-
-        socket.on("spin_started", ({ chosenId }) => {
-            // server told us which card will be revealed (so clients can sync animation)
-            setLastChosenId(chosenId);
-            // clear previous reveal so overlay can re-open
-            setRevealedCard(null);
-        });
-
-        socket.on("reveal_card", ({ card }) => {
-            // card: { id, name, content }
-            setRevealedCard(card);
+            setTotalRotations(payload.totalRotations)
+            setCurrentAngle(payload.currentAngle)
         });
 
         // clean up on unmount
@@ -75,9 +63,8 @@ export default function App() {
     // join room and register name
     const joinRoom = () => {
         if (!roomName.trim() || !name.trim()) return;
-        console.log(roomName)
-        console.log(name)
-        socket.emit("join_room", { roomName, playerName: name }, (res) => {
+        const payload = { roomName, playerName: name };
+        socket.emit("join_room", payload, (res) => {
             if (res && res.ok) {
                 setJoined(true);
                 setRoomId(res.room.id)
@@ -97,26 +84,18 @@ export default function App() {
     const submitCard = (content) => {
         const trimmed = (content || "").trim();
         if (!trimmed) return;
-        socket.emit("submit_item", { roomId: roomId, content: trimmed }, (res) => {
+        const payload = {roomId: roomId, content: trimmed};
+        socket.emit("submit_item", payload, (res) => {
             if (!res || !res.ok) {
                 alert((res && res.error) || "Failed to submit card");
             }
         });
     };
 
-    // leader starts spin — server chooses card and broadcasts
-    const startSpin = () => {
-        if (!isLeader) return;
-        socket.emit("start_spin", { roomId: roomId }, (res) => {
-            if (res && !res.ok) {
-                alert(res.error || "Failed to start spin");
-            }
-        });
-    };
-
     const startRound = () => {
         if (!isLeader) return;
-        socket.emit("start_game", { roomId: roomId }, (res) => {
+        const payload = { roomId: roomId };
+        socket.emit("start_game", payload, (res) => {
             if (res && !res.ok) {
                 alert(res.error || "Failed to start game");
             }
@@ -132,12 +111,17 @@ export default function App() {
         }
     };
 
-    const onBingoMachineRotate = ({ currentAngle, degrees, totalRotation }) => {
-        console.log(currentAngle, degrees, totalRotation);
-        if (degrees >= 360 * 5) {
+    const onBingoMachineRotate = throttle((state) => {
+        if (state.totalRotations >= 5) {
             console.log("5 full rotations done!");
         }
-    };
+        const payload = { roomId: roomId, currentAngle: state.angle, totalRotations: state.rotations }
+        socket.emit("bingo_rotate", payload, (res) => {
+            if (res && !res.ok) {
+                alert(res.error || "Failed to start game");
+            }
+        });
+    }, 50);
 
     if (!joined) {
         // Join screen
@@ -208,13 +192,7 @@ export default function App() {
             </aside>
 
             <main style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <BingoMachine
-                    canControl={isLeader}
-                    onRotate={(state) => {
-                        console.log(state)
-                        socket.emit("bingo_rotate", state)
-                    }
-                }/>
+                <BingoMachine canControl={isLeader} isDebug={false} onRotate={onBingoMachineRotate} />
 
                 {/*/!* Reveal overlay *!/*/}
                 {/*{revealedCard && (*/}
