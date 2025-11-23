@@ -1,6 +1,11 @@
 import React, {useEffect, useRef, useImperativeHandle, forwardRef} from "react";
 import Matter from "matter-js";
 
+const width = 800;
+const height = 800;
+const drumRadius = 300;
+const knobRadius = 28;
+
 const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isDebug}, ref) {
     console.log("BingoMachine rendered");
     const sceneRef = useRef(null);
@@ -12,6 +17,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
     const prevNormAngleRef = useRef(0);
     const hasPassedHalfwayRef = useRef(false);
     const knobRef = useRef(null);
+    const drumCenterRef = useRef({ x: width/2, y: height/2 });
 
     // NEW: store balls so energize can use them
     const ballsRef = useRef([]);
@@ -53,8 +59,31 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
     useImperativeHandle(ref, () => ({
         updateAngle: (newAngle) => {
             angleRef.current = newAngle;
+
+            // Energize balls based on the new knob rotation
+            // Only if balls exist (they are stored in ballsRef)
+            if (ballsRef.current.length > 0) {
+                const drumCenter = drumCenterRef.current
+                energizeBalls(ballsRef.current, drumCenter, drumRadius, {
+                    tangentialStrength: 0.0012,
+                    inwardStrength: 0.00002,
+                    avoidNearWallPx: 22
+                });
+
+                // Limit max speed to prevent tunneling
+                const MAX_SPEED = 20;
+                ballsRef.current.forEach(ball => {
+                    const v = ball.velocity;
+                    const speed = Math.sqrt(v.x*v.x + v.y*v.y);
+                    if (speed > MAX_SPEED) {
+                        const scale = MAX_SPEED / speed;
+                        Matter.Body.setVelocity(ball, { x: v.x * scale, y: v.y * scale });
+                    }
+                });
+            }
         }
     }));
+
 
     function createHollowCircle(x, y, radius, thickness = 10, segments = 40) {
         const { Bodies } = Matter;
@@ -138,10 +167,6 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
 
     useEffect(() => {
         const {Engine, Render, Runner, World, Bodies, Body, Mouse, MouseConstraint, Events} = Matter;
-        const width = 800;
-        const height = 800;
-        const drumRadius = 300;
-        const knobRadius = 28;
 
         const engine = Engine.create();
         const world = engine.world;
@@ -154,7 +179,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         });
         renderRef.current = render;
 
-        const drumCenter = { x: width/2, y: height/2 };
+        const drumCenter = drumCenterRef.current
         const wallThickness = 80;
         const segments = 75;
 
