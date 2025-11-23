@@ -55,6 +55,34 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             angleRef.current = newAngle;
         }
     }));
+    function createHollowCircle(x, y, radius, thickness = 10, segments = 40) {
+        const { Bodies, Body } = Matter;
+
+        const angleStep = (Math.PI * 2) / segments;
+        const walls = [];
+
+        for (let i = 0; i < segments; i++) {
+            const angle = i * angleStep;
+
+            const wall = Bodies.rectangle(
+                x + Math.cos(angle) * radius,
+                y + Math.sin(angle) * radius,
+                thickness,
+                radius * 0.2, // length of each segment
+                {
+                    isStatic: true,
+                    angle: angle + Math.PI / 2,
+                    render: {
+                        fillStyle: "#fff",
+                        strokeStyle: "#fff",
+                        lineWidth: 2,
+                    }
+                }
+            );
+            walls.push(wall);
+        }
+        return walls;
+    }
     useEffect(() => {
         const {Engine, Render, Runner, World, Bodies, Body, Mouse, MouseConstraint, Events} = Matter;
         const width = 800;
@@ -73,13 +101,18 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         });
         renderRef.current = render;
 
-        const drum = Bodies.circle(width / 2, height / 2, drumRadius, {
-            isStatic: true,
-            render: {fillStyle: "#fff", strokeStyle: "#000", lineWidth: 4},
-        });
+        const drumWalls = createHollowCircle(
+            width / 2,
+            height / 2,
+            drumRadius,
+            30,   // wall thickness
+            75    // number of segments (more = smoother circle)
+        );
+        const drumCenter = { x: width/2, y: height/2 };
+
 
         // Knob
-        knobRef.current = Bodies.circle(drum.position.x + drumRadius, drum.position.y, knobRadius, {
+        knobRef.current = Bodies.circle(drumCenter.x + drumRadius, drumCenter.y, knobRadius, {
             isStatic: true,
             render: {fillStyle: "#ff0000"},
         });
@@ -90,7 +123,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             render: {fillStyle: "#3498db"}
         }));
 
-        World.add(world, [drum, knobRef.current, ...balls]);
+        World.add(world, [...drumWalls, knobRef.current, ...balls]);
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, {
             mouse,
@@ -100,7 +133,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         if (canControl) {
             World.add(world, mouseConstraint);
         }
-        const angleFromPos = (pos) => Math.atan2(pos.y - drum.position.y, pos.x - drum.position.x);
+        const angleFromPos = (pos) => Math.atan2(pos.y - drumCenter.y, pos.x - drumCenter.x);
         let lastAngle = 0;
         if (canControl) {
             Events.on(mouseConstraint, "startdrag", (e) => {
@@ -118,7 +151,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             Events.on(render, "afterRender", () => {
                 const ctx = render.context;
                 ctx.save();
-                ctx.translate(drum.position.x, drum.position.y);
+                ctx.translate(drumCenter.x, drumCenter.y);
 
                 // Halfway line (red)
                 ctx.strokeStyle = "red";
@@ -163,8 +196,8 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
 
             // Update knob position
             Body.setPosition(knobRef.current, {
-                x: drum.position.x + Math.cos(angleRef.current) * drumRadius,
-                y: drum.position.y + Math.sin(angleRef.current) * drumRadius,
+                x: drumCenter.x + Math.cos(angleRef.current) * drumRadius,
+                y: drumCenter.y + Math.sin(angleRef.current) * drumRadius,
             });
         });
 
