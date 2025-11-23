@@ -56,6 +56,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         }
         prevNormAngleRef.current = curr;
     };
+
     useImperativeHandle(ref, () => ({
         updateAngle: (newAngle) => {
             angleRef.current = newAngle;
@@ -83,7 +84,6 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             }
         }
     }));
-
 
     function createHollowCircle(x, y, radius, thickness = 10, segments = 40) {
         const { Bodies } = Matter;

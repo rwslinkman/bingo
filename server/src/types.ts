@@ -8,6 +8,7 @@ export interface Submission {
     socketId: string;
     content: string;
     submitter: string;
+    type: "bingoball" | "jira-ticket" | "unknown";
 }
 
 export interface BingoBall {

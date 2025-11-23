@@ -29,6 +29,9 @@ export default function App() {
     const [players, setPlayers] = useState([]);
     const [submissions, setSubmissions] = useState([]);
     const isLeaderRef = useRef(false);
+    // modal
+    const [modalContent, setModalContent] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // set up socket listeners once
     useEffect(() => {
@@ -180,7 +183,7 @@ export default function App() {
             <main style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <MemoBingoMachine
                     ref={bingoRef}
-                    canControl={isLeaderRef.current}
+                    canControl={isLeaderRef.current && state === "running"}
                     isDebug={false}
                     onRotate={onBingoMachineRotate}
                 />
