@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useImperativeHandle, forwardRef} from "react";
 import Matter from "matter-js";
 
 const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isDebug}, ref) {
+    console.log("BingoMachine rendered"); // inside the component body
     const sceneRef = useRef(null);
     const engineRef = useRef(null);
     const renderRef = useRef(null);
@@ -10,13 +11,18 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
     const rotationCountRef = useRef(0);
     const prevNormAngleRef = useRef(0);
     const hasPassedHalfwayRef = useRef(false);
+    /** @type {React.MutableRefObject<Matter.Body | null>} */
+    const knobRef = useRef(null);
+
     const LAP_MARKER = 0; // radians
     const HALF_MARKER = Math.PI; // 180°
     const LAP_THRESHOLD = 0.05; // tolerance
+
     const normalize = (a) => {
         let x = a % (Math.PI * 2);
         return x < 0 ? x + Math.PI * 2 : x;
     };
+
     const checkRotation = (rawAngle) => {
         const prev = prevNormAngleRef.current;
         const curr = normalize(rawAngle); // Delta with wraparound
@@ -47,7 +53,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
     useImperativeHandle(ref, () => ({
         updateAngle: (newAngle) => {
             angleRef.current = newAngle;
-        },
+        }
     }));
     useEffect(() => {
         const {Engine, Render, Runner, World, Bodies, Body, Mouse, MouseConstraint, Events} = Matter;
@@ -73,7 +79,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         });
 
         // Knob
-        const knob = Bodies.circle(drum.position.x + drumRadius, drum.position.y, knobRadius, {
+        knobRef.current = Bodies.circle(drum.position.x + drumRadius, drum.position.y, knobRadius, {
             isStatic: true,
             render: {fillStyle: "#ff0000"},
         });
@@ -84,7 +90,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             render: {fillStyle: "#3498db"}
         }));
 
-        World.add(world, [drum, knob, ...balls]);
+        World.add(world, [drum, knobRef.current, ...balls]);
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, {
             mouse,
@@ -98,13 +104,13 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         let lastAngle = 0;
         if (canControl) {
             Events.on(mouseConstraint, "startdrag", (e) => {
-                if (e.body === knob) {
+                if (e.body === knobRef.current) {
                     draggingRef.current = true;
                     lastAngle = angleFromPos(mouse.position);
                 }
             });
             Events.on(mouseConstraint, "enddrag", (e) => {
-                if (e.body === knob) draggingRef.current = false;
+                if (e.body === knobRef.current) draggingRef.current = false;
             });
         }
         if (isDebug) {
@@ -156,9 +162,9 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             }
 
             // Update knob position
-            Body.setPosition(knob, {
-                x: drum.position.x + Math.cos(angle) * drumRadius,
-                y: drum.position.y + Math.sin(angle) * drumRadius,
+            Body.setPosition(knobRef.current, {
+                x: drum.position.x + Math.cos(angleRef.current) * drumRadius,
+                y: drum.position.y + Math.sin(angleRef.current) * drumRadius,
             });
         });
 

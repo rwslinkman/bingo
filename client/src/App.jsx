@@ -4,6 +4,8 @@ import { io } from "socket.io-client";
 import BingoMachine from "./components/BingoMachine";
 import CardReveal from "./components/CardReveal";
 import {throttle} from "lodash/function";
+import PlayersList from "./components/PlayersList";
+import SubmissionsList from "./components/SubmissionsList";
 
 // connect to same origin
 const socket = io("http://localhost:3000");
@@ -14,6 +16,7 @@ function randomPlayerName() {
 
 export default function App() {
     const bingoRef = useRef(null);
+    const MemoBingoMachine = React.memo(BingoMachine);
     // join / identity
     const [roomId, setRoomId] = useState("");
     const [roomName, setRoomName] = useState("room-1");
@@ -25,10 +28,7 @@ export default function App() {
     const [gameType, setGameType] = useState("cardpicker")
     const [players, setPlayers] = useState([]);
     const [submissions, setSubmissions] = useState([]);
-    const [isLeader, setIsLeader] = useState(false);
-    // game elements
-    const [totalRotations, setTotalRotations] = useState(0);
-    const [currentAngle, setCurrentAngle] = useState(0);
+    const isLeaderRef = useRef(false);
 
     // set up socket listeners once
     useEffect(() => {
@@ -43,20 +43,24 @@ export default function App() {
             setRoomId(payload.id);
             setRoomName(payload.roomName);
             setGameType(payload.gameType);
-            setIsLeader(Boolean(payload.leader));
+            isLeaderRef.current = socket.id === payload.leader;
             setPlayers(payload.players || []);
             setSubmissions(payload.balls || []);
             setState(payload.state)
-            setTotalRotations(payload.totalRotations)
-            setCurrentAngle(payload.currentAngle)
         });
+
+        socket.on("bingo_rotation", (payload) => {
+            if(!payload || isLeaderRef.current) {
+                return;
+            }
+            bingoRef.current.updateAngle(payload.currentAngle);
+        })
 
         // clean up on unmount
         return () => {
             socket.off("connect");
             socket.off("room_update");
-            socket.off("spin_started");
-            socket.off("reveal_card");
+            socket.off("bingo_rotation");
         };
     }, []);
 
@@ -70,7 +74,7 @@ export default function App() {
                 setRoomId(res.room.id)
                 setRoomName(res.room.roomName)
                 setGameType(res.room.gameType)
-                setIsLeader(Boolean(res.room.leader));
+                isLeaderRef.current = socket.id === res.room.leader
                 setPlayers(res.room.players || []);
                 setSubmissions(res.room.balls || []);
                 setState(res.room.state)
@@ -93,7 +97,7 @@ export default function App() {
     };
 
     const startRound = () => {
-        if (!isLeader) return;
+        if (!isLeaderRef.current) return;
         const payload = { roomId: roomId };
         socket.emit("start_game", payload, (res) => {
             if (res && !res.ok) {
@@ -111,17 +115,10 @@ export default function App() {
         }
     };
 
-    const onBingoMachineRotate = throttle((state) => {
-        if (state.totalRotations >= 5) {
-            console.log("5 full rotations done!");
-        }
-        const payload = { roomId: roomId, currentAngle: state.angle, totalRotations: state.rotations }
-        socket.emit("bingo_rotate", payload, (res) => {
-            if (res && !res.ok) {
-                alert(res.error || "Failed to start game");
-            }
-        });
-    }, 50);
+    const onBingoMachineRotate = (state) => {
+        const payload = { roomId: roomId, angle: state.angle, rotations: state.rotations }
+        socket.emit("bingo_rotate", payload);
+    };
 
     if (!joined) {
         // Join screen
@@ -155,32 +152,21 @@ export default function App() {
                     <strong>RoomID:</strong> {roomId} <br/>
                     <strong>Type:</strong> {gameType} <br/>
                     <strong>State:</strong> {state} <br/>
-                    <strong>You:</strong> {name} {isLeader ? " (leader)" : ""}
+                    <strong>You:</strong> {name} {isLeaderRef.current ? " (leader)" : ""}
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <button onClick={startRound} disabled={!isLeader || submissions.length === 0 || state !== "waiting" } style={{ padding: "8px 12px" }}>
-                        {isLeader ? "Start game (leader)" : "Waiting for leader"}
+                    <button onClick={startRound} disabled={!isLeaderRef.current || submissions.length === 0 || state !== "waiting" } style={{ padding: "8px 12px" }}>
+                        {isLeaderRef.current ? "Start game (leader)" : "Waiting for leader"}
                     </button>
                 </div>
 
-                <section style={{ marginBottom: 12 }}>
-                    <h3>Players</h3>
-                    <ul>
-                        {players.map((p, i) => (
-                            <li key={i}>{p.name} {p.isLeader ? " (leader)" : ""}</li>
-                        ))}
-                    </ul>
-                </section>
-
-                <section style={{ marginBottom: 12 }}>
-                    <h3>Submitted cards</h3>
-                    <ul>
-                        {submissions.map((s, i) => (
-                            <li key={i}>{s.content}</li>
-                        ))}
-                    </ul>
-                </section>
+                <PlayersList
+                    players={players}
+                />
+                <SubmissionsList
+                    submissions={submissions}
+                />
 
                 { state === "waiting" ?
                 (<section>
@@ -192,14 +178,12 @@ export default function App() {
             </aside>
 
             <main style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <BingoMachine canControl={isLeader} isDebug={false} onRotate={onBingoMachineRotate} />
-
-                {/*/!* Reveal overlay *!/*/}
-                {/*{revealedCard && (*/}
-                {/*    <div style={{ position: "absolute", right: 24, top: 24 }}>*/}
-                {/*        <CardReveal card={revealedCard} />*/}
-                {/*    </div>*/}
-                {/*)}*/}
+                <MemoBingoMachine
+                    ref={bingoRef}
+                    canControl={isLeaderRef.current}
+                    isDebug={false}
+                    onRotate={onBingoMachineRotate}
+                />
             </main>
         </div>
     );

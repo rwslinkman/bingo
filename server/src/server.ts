@@ -124,8 +124,12 @@ io.on("connection", (socket: Socket) => {
         room.currentAngle = payload.angle;
         room.totalRotations = payload.rotations;
 
-        const roomData = roomStateToStatus(room)
-        io.to(room.id).emit("room_update", roomData);
+        const rotationBroadcast = {
+            currentAngle: room.currentAngle,
+            totalRotations: room.totalRotations
+        }
+        io.to(room.id).emit("bingo_rotation", rotationBroadcast);
+        const roomData = roomStateToStatus(room);
         cb?.({ ok: true, room: roomData });
     })
 
