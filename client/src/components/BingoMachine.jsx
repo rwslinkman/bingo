@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useImperativeHandle, forwardRef} from "react";
 import Matter from "matter-js";
 
 const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isDebug}, ref) {
-    console.log("BingoMachine rendered"); // inside the component body
+    console.log("BingoMachine rendered");
     const sceneRef = useRef(null);
     const engineRef = useRef(null);
     const renderRef = useRef(null);
@@ -11,8 +11,10 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
     const rotationCountRef = useRef(0);
     const prevNormAngleRef = useRef(0);
     const hasPassedHalfwayRef = useRef(false);
-    /** @type {React.MutableRefObject<Matter.Body | null>} */
     const knobRef = useRef(null);
+
+    // NEW: store balls so energize can use them
+    const ballsRef = useRef([]);
 
     const LAP_MARKER = 0; // radians
     const HALF_MARKER = Math.PI; // 180°
@@ -31,14 +33,12 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         if (delta > Math.PI) delta -= 2 * Math.PI;
         const forward = delta > 0;
 
-        // Halfway check: only count if actually passing π radians in forward motion
         if (forward && !hasPassedHalfwayRef.current) {
             if (prev < HALF_MARKER && curr >= HALF_MARKER) {
                 hasPassedHalfwayRef.current = true;
                 console.log("halfway passed");
             }
         }
-        // Lap detection
         const crossedLap = forward && hasPassedHalfwayRef.current && prev < LAP_MARKER + LAP_THRESHOLD && curr >= LAP_MARKER;
         if (crossedLap && hasPassedHalfwayRef.current) {
             rotationCountRef.current += 1;
@@ -55,11 +55,15 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             angleRef.current = newAngle;
         }
     }));
+
     function createHollowCircle(x, y, radius, thickness = 10, segments = 40) {
-        const { Bodies, Body } = Matter;
+        const { Bodies } = Matter;
 
         const angleStep = (Math.PI * 2) / segments;
         const walls = [];
+
+        // We'll make each segment slightly longer than needed to avoid tiny gaps
+        const segLength = Math.max(10, Math.round((Math.PI * 2 * radius) / segments) + 6);
 
         for (let i = 0; i < segments; i++) {
             const angle = i * angleStep;
@@ -68,14 +72,21 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 x + Math.cos(angle) * radius,
                 y + Math.sin(angle) * radius,
                 thickness,
-                radius * 0.2, // length of each segment
+                segLength,
                 {
                     isStatic: true,
                     angle: angle + Math.PI / 2,
+
+                    // 👇 ZERO friction so balls don't stick
+                    friction: 0,
+                    frictionStatic: 0,
+                    frictionAir: 0,
+                    restitution: 1, // bouncy interior
+
                     render: {
                         fillStyle: "#fff",
                         strokeStyle: "#fff",
-                        lineWidth: 2,
+                        lineWidth: 1,
                     }
                 }
             );
@@ -83,6 +94,48 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         }
         return walls;
     }
+
+    // energizeBalls: tangential push + small inward corrector, safe near wall
+    function energizeBalls(balls, drumCenter, drumRadius, options = {}) {
+        const { Body } = Matter;
+        const {
+            tangentialStrength = 0.0008, // base tangential force
+            inwardStrength = 0.0003,     // small inward pulling force when near rim
+            avoidNearWallPx = 18         // don't push tangentially if this close to rim
+        } = options;
+
+        balls.forEach(ball => {
+            const dx = ball.position.x - drumCenter.x;
+            const dy = ball.position.y - drumCenter.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist === 0) return;
+
+            // unit radial vector (from center to ball)
+            const ux = dx / dist;
+            const uy = dy / dist;
+
+            // unit tangential vector (perpendicular, CCW)
+            const tx = -uy;
+            const ty = ux;
+
+            // If ball is very close to wall, skip tangential push to avoid tunneling
+            const distanceToWall = drumRadius - dist;
+            if (distanceToWall > avoidNearWallPx) {
+                // tangential force proportional to tangentialStrength (optionally scale with distance of knob movement)
+                Body.applyForce(ball, ball.position, { x: tx * tangentialStrength, y: ty * tangentialStrength });
+            }
+
+            // If ball is too close to the rim, apply a small inward force to keep it inside
+            const safeRadius = drumRadius - (ball.circleRadius ?? (ball.bounds.max.x - ball.bounds.min.x)/2) - (/*wallHalf thickness*/ 15);
+            if (dist > safeRadius) {
+                Body.applyForce(ball, ball.position, {
+                    x: -ux * inwardStrength,
+                    y: -uy * inwardStrength
+                });
+            }
+        });
+    }
+
     useEffect(() => {
         const {Engine, Render, Runner, World, Bodies, Body, Mouse, MouseConstraint, Events} = Matter;
         const width = 800;
@@ -101,29 +154,35 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         });
         renderRef.current = render;
 
-        const drumWalls = createHollowCircle(
-            width / 2,
-            height / 2,
-            drumRadius,
-            30,   // wall thickness
-            75    // number of segments (more = smoother circle)
-        );
         const drumCenter = { x: width/2, y: height/2 };
+        const wallThickness = 80;
+        const segments = 75;
 
+        const drumWalls = createHollowCircle(drumCenter.x, drumCenter.y, drumRadius, wallThickness, segments);
 
-        // Knob
+        // Knob stays STATIC on rim (like your original)
         knobRef.current = Bodies.circle(drumCenter.x + drumRadius, drumCenter.y, knobRadius, {
             isStatic: true,
             render: {fillStyle: "#ff0000"},
         });
 
-        // Balls
-        const balls = [...Array(10)].map(() => Bodies.circle(width / 2 + Math.random() * 80 - 40, height / 2 + Math.random() * 80 - 40, 15, {
-            restitution: 0.8,
-            render: {fillStyle: "#3498db"}
-        }));
+        // Balls (store in ref for energize access)
+        ballsRef.current = [...Array(10)].map(() => Bodies.circle(
+            drumCenter.x + (Math.random() * 80 - 40),
+            drumCenter.y + (Math.random() * 80 - 40),
+            15,
+            {
+                restitution: 0.95,   // more bounce
+                friction: 0,         // no wall friction
+                frictionStatic: 0,
+                frictionAir: 0.005,  // small drag so they slow down smoothly
+                density: 0.001,      // makes them lighter and easier to move
+                render: {fillStyle: "#3498db"},
+            }
+        ));
 
-        World.add(world, [...drumWalls, knobRef.current, ...balls]);
+        World.add(world, [...drumWalls, knobRef.current, ...ballsRef.current]);
+
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, {
             mouse,
@@ -146,14 +205,13 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 if (e.body === knobRef.current) draggingRef.current = false;
             });
         }
+
         if (isDebug) {
-            // Draw visual helpers after render
             Events.on(render, "afterRender", () => {
                 const ctx = render.context;
                 ctx.save();
                 ctx.translate(drumCenter.x, drumCenter.y);
 
-                // Halfway line (red)
                 ctx.strokeStyle = "red";
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -161,7 +219,6 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 ctx.lineTo(Math.cos(HALF_MARKER) * drumRadius, Math.sin(HALF_MARKER) * drumRadius);
                 ctx.stroke();
 
-                // Lap marker line (green)
                 ctx.strokeStyle = "green";
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -169,7 +226,6 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 ctx.lineTo(Math.cos(LAP_MARKER) * drumRadius, Math.sin(LAP_MARKER) * drumRadius);
                 ctx.stroke();
 
-                // Rotation progress arc
                 ctx.strokeStyle = "rgba(0,0,0,0.2)";
                 ctx.lineWidth = 4;
                 ctx.beginPath();
@@ -178,6 +234,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 ctx.restore();
             });
         }
+
         Events.on(engine, "beforeUpdate", () => {
             let angle = angleRef.current;
             if (canControl && draggingRef.current) {
@@ -189,12 +246,29 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 angleRef.current = angle;
                 lastAngle = newAngle;
                 checkRotation(angle);
+
+                // NEW: energize, but with safer params
+                energizeBalls(ballsRef.current, drumCenter, drumRadius, {
+                    tangentialStrength: 0.0012,  // stronger push around the circle
+                    inwardStrength: 0.00005,     // VERY tiny inward nudge
+                    avoidNearWallPx: 22          // avoid pushing when too close
+                });
+                const MAX_SPEED = 20;
+                ballsRef.current.forEach(ball => {
+                    const v = ball.velocity;
+                    const speed = Math.sqrt(v.x*v.x + v.y*v.y);
+                    if (speed > MAX_SPEED) {
+                        const scale = MAX_SPEED / speed;
+                        Matter.Body.setVelocity(ball, { x: v.x * scale, y: v.y * scale });
+                    }
+                });
+
                 if (onRotate) {
                     onRotate({angle, rotations: rotationCountRef.current});
                 }
             }
 
-            // Update knob position
+            // Keep knob glued to rim (static body - reposition to follow angleRef if external updates occur)
             Body.setPosition(knobRef.current, {
                 x: drumCenter.x + Math.cos(angleRef.current) * drumRadius,
                 y: drumCenter.y + Math.sin(angleRef.current) * drumRadius,
@@ -209,7 +283,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             render.canvas.remove();
             render.textures = {};
         };
-    }, [canControl, onRotate]);
+    }, [canControl, onRotate, isDebug]);
 
     return <div ref={sceneRef} style={{width: 800, height: 800}}/>;
 });
