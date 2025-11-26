@@ -109,9 +109,25 @@ io.on("connection", (socket: Socket) => {
         cb?.({ ok: true, room: roomData });
     });
 
-    socket.on("bingo_rotate", (payload: BingoRotationPayload, cb?: SocketCallback)=> {
-        console.log("rotate event");
+    socket.on("close_game", (payload: StartGamePayload, cb?: SocketCallback)=> {
+        const room = ensureRoom(payload.roomId);
 
+        if(room.state != "finished") {
+            return cb?.({ ok: false, error: "game not in finished state" });
+        }
+        if (room.leader !== socket.id) {
+            return cb?.({ok: false, error: "not leader"});
+        }
+
+        room.state = "closed";
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("game_ended", roomData);
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    });
+
+    socket.on("bingo_rotate", (payload: BingoRotationPayload, cb?: SocketCallback)=> {
         const room = ensureRoom(payload.roomId);
 
         if(room.state != "running") {
@@ -130,11 +146,10 @@ io.on("connection", (socket: Socket) => {
             room.totalRotations = 0;
 
             // Take ball and reveal content
-            console.log(room.submissions.length, room.completed.length);
             const ballPicked = takeRandom(room.submissions);
             room.completed.push(ballPicked);
-            console.log(room.submissions.length, room.completed.length);
 
+            // Emit revealed item
             const eventData = {
                 type: ballPicked.type,
                 content: ballPicked.content,

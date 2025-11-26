@@ -42,14 +42,12 @@ const BingoMachine = forwardRef(function BingoMachine({ballCount, canControl, on
         if (forward && !hasPassedHalfwayRef.current) {
             if (prev < HALF_MARKER && curr >= HALF_MARKER) {
                 hasPassedHalfwayRef.current = true;
-                console.log("halfway passed");
             }
         }
         const crossedLap = forward && hasPassedHalfwayRef.current && prev < LAP_MARKER + LAP_THRESHOLD && curr >= LAP_MARKER;
         if (crossedLap && hasPassedHalfwayRef.current) {
             rotationCountRef.current += 1;
             hasPassedHalfwayRef.current = false;
-            console.log("rotation")
             if (onRotate) {
                 onRotate({angle: rawAngle, rotations: 1 });
             }

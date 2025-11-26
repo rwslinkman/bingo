@@ -24,7 +24,7 @@ export interface RoomState {
     players: Record<string, PlayerInfo>;
     submissions: Submission[];
     completed: Submission[];
-    state: "waiting" | "running" | "finished";
+    state: "waiting" | "running" | "finished" | "closed";
     currentAngle: number;
     totalRotations: number;
 }
@@ -36,9 +36,10 @@ export interface RoomStatus {
     leader: string | null;
     players: PlayerInfo[];
     balls: BingoBall[];
+    revealedBalls: BingoBall[];
     currentAngle: number;
     totalRotations: number;
-    state: "waiting" | "running" | "finished";
+    state: "waiting" | "running" | "finished" | "closed";
 }
 
 export interface SocketResponse {

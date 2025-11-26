@@ -10,7 +10,13 @@ export function roomStateToStatus(input: RoomState): RoomStatus {
         balls: input.submissions.map((s) => {
             return {
                 content: s.content,
-                submitter: s.submitter
+                submitter: s.submitter,
+            };
+        }),
+        revealedBalls: input.completed.map((s) => {
+            return {
+                content: s.content,
+                submitter: s.submitter,
             };
         }),
         state: input.state,

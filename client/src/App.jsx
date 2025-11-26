@@ -29,6 +29,7 @@ export default function App() {
     const [gameType, setGameType] = useState("cardpicker")
     const [players, setPlayers] = useState([]);
     const [submissions, setSubmissions] = useState([]);
+    const [completedSubmissions, setCompletedSubmissions] = useState([]);
     const isLeaderRef = useRef(false);
     // modal
     const [modalContent, setModalContent] = useState(null);
@@ -50,6 +51,7 @@ export default function App() {
             isLeaderRef.current = socket.id === payload.leader;
             setPlayers(payload.players || []);
             setSubmissions(payload.balls || []);
+            setCompletedSubmissions(payload.revealedBalls || []);
             setState(payload.state)
         });
 
@@ -57,13 +59,11 @@ export default function App() {
             if(!payload || isLeaderRef.current) {
                 return;
             }
-            console.log('rotate event for observer');
             bingoRef.current.updateAngle(payload.currentAngle, payload.totalRotations);
         });
 
         socket.on("item_reveal", (payload) => {
             if (!payload) return;
-            console.log(payload);
 
             if(isLeaderRef.current) {
                 // Stop dragging before modal appears to stop explosion of rotate events
@@ -80,6 +80,17 @@ export default function App() {
             );
             setIsModalOpen(true);
         });
+
+        socket.on("game_ended", (_) => {
+            // data can be anything: string, object, JSX
+            setModalContent(
+                <div>
+                    <h2>The bingo game has ended!</h2>
+                    <p>Thank you for playing</p>
+                </div>
+            );
+            setIsModalOpen(true);
+        })
 
         // clean up on unmount
         return () => {
@@ -131,6 +142,16 @@ export default function App() {
         })
     }
 
+    const closeGame = () => {
+        if (!isLeaderRef.current) return;
+        const payload = { roomId: roomId };
+        socket.emit("close_game", payload, (res) => {
+            if (res && !res.ok) {
+                alert(res.error || "Failed to close game");
+            }
+        });
+    }
+
     // simple submit handler for Enter key in input
     const onCardKeyDown = (e) => {
         if (e.key === "Enter") {
@@ -143,7 +164,6 @@ export default function App() {
     const onBingoMachineRotate = (state) => {
         const payload = { roomId: roomId, angle: state.angle, rotations: state.rotations }
         socket.emit("bingo_rotate", payload);
-        console.log("rotation emitted")
     };
 
     if (!joined) {
@@ -186,12 +206,18 @@ export default function App() {
                         {isLeaderRef.current ? "Start game (leader)" : "Waiting for leader"}
                     </button>
                 </div>
+                <div style={{ marginBottom: 12 }}>
+                    <button onClick={closeGame} disabled={!isLeaderRef.current || state !== "finished" } style={{ padding: "8px 12px" }}>
+                        {isLeaderRef.current ? "End game (leader)" : "Waiting for leader"}
+                    </button>
+                </div>
 
                 <PlayersList
                     players={players}
                 />
                 <SubmissionsList
                     submissions={submissions}
+                    completed={completedSubmissions}
                 />
 
                 { state === "waiting" ?
