@@ -6,6 +6,7 @@ import CardReveal from "./components/CardReveal";
 import {throttle} from "lodash/function";
 import PlayersList from "./components/PlayersList";
 import SubmissionsList from "./components/SubmissionsList";
+import Modal from "./components/Modal";
 
 // connect to same origin
 const socket = io("http://localhost:3000");
@@ -56,8 +57,23 @@ export default function App() {
             if(!payload || isLeaderRef.current) {
                 return;
             }
-            bingoRef.current.updateAngle(payload.currentAngle);
-        })
+            bingoRef.current.updateAngle(payload.currentAngle, payload.totalRotations);
+        });
+
+        socket.on("item_reveal", (payload) => {
+            if (!payload) return;
+
+            console.log(payload);
+            // data can be anything: string, object, JSX
+            setModalContent(
+                <div>
+                    <h2>🎉 An item was drawn from the Bingo machine!</h2>
+                    <p>{payload.content}</p>
+                    <p style={{ fontSize: "12pt" }}>Submitted by: {payload.submitter}</p>
+                </div>
+            );
+            setIsModalOpen(true);
+        });
 
         // clean up on unmount
         return () => {
@@ -187,6 +203,13 @@ export default function App() {
                     isDebug={false}
                     onRotate={onBingoMachineRotate}
                 />
+
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                >
+                    {modalContent}
+                </Modal>
             </main>
         </div>
     );

@@ -51,15 +51,17 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
             hasPassedHalfwayRef.current = false;
             console.log("rotation")
             if (onRotate) {
-                onRotate({angle: rawAngle, rotations: rotationCountRef.current,});
+                onRotate({angle: rawAngle, rotations: 1 });
             }
+
         }
         prevNormAngleRef.current = curr;
     };
 
     useImperativeHandle(ref, () => ({
-        updateAngle: (newAngle) => {
+        updateAngle: (newAngle, newRotationCount) => {
             angleRef.current = newAngle;
+            // rotationCountRef.current = newRotationCount;
 
             // Energize balls based on the new knob rotation
             // Only if balls exist (they are stored in ballsRef)
@@ -289,7 +291,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
                 });
 
                 if (onRotate) {
-                    onRotate({angle, rotations: rotationCountRef.current});
+                    onRotate({angle, rotations: 0 });
                 }
             }
 

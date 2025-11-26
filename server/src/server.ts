@@ -120,24 +120,32 @@ io.on("connection", (socket: Socket) => {
         }
 
         room.currentAngle = payload.angle;
-        room.totalRotations = payload.rotations;
+        if(payload.rotations > 0) {
+            room.totalRotations++;
+        }
 
         if(room.totalRotations >= ROTATIONS_NEEDED) {
-            // Take ball and reveal content
             room.totalRotations = 0;
+
+            // Take ball and reveal content
+            console.log(room.submissions.length, room.completed.length);
             const ballPicked = takeRandom(room.submissions);
-            console.log(ballPicked);
-            console.log(room.submissions.length);
             room.completed.push(ballPicked);
-            console.log(room.completed.length);
+            console.log(room.submissions.length, room.completed.length);
 
-            // TODO: game ends when room.submissions is empty
+            const eventData = {
+                type: ballPicked.type,
+                content: ballPicked.content,
+                submitter: ballPicked.submitter
+            }
+            io.to(room.id).emit("item_reveal", eventData)
 
-            // const eventData = {
-            //     type: ballPicked.type,
-            //
-            // }
-            //  TODO: Emit ballPicked data to all clients to show modal
+            if(room.submissions.length === 0) {
+                // Game ends when room.submissions is empty
+                room.state = "finished";
+            }
+            const roomData = roomStateToStatus(room)
+            io.to(room.id).emit("room_update", roomData);
         }
 
         const rotationBroadcast = {
