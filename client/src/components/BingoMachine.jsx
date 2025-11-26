@@ -6,7 +6,7 @@ const height = 800;
 const drumRadius = 300;
 const knobRadius = 28;
 
-const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isDebug}, ref) {
+const BingoMachine = forwardRef(function BingoMachine({ballCount, canControl, onRotate, isDebug}, ref) {
     console.log("BingoMachine rendered");
     const sceneRef = useRef(null);
     const engineRef = useRef(null);
@@ -194,7 +194,7 @@ const BingoMachine = forwardRef(function BingoMachine({canControl, onRotate, isD
         });
 
         // Balls (store in ref for energize access)
-        ballsRef.current = [...Array(10)].map(() => Bodies.circle(
+        ballsRef.current = [...Array(ballCount)].map(() => Bodies.circle(
             drumCenter.x + (Math.random() * 80 - 40),
             drumCenter.y + (Math.random() * 80 - 40),
             15,

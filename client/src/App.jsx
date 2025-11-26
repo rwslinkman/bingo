@@ -200,6 +200,7 @@ export default function App() {
                 <MemoBingoMachine
                     ref={bingoRef}
                     canControl={isLeaderRef.current && state === "running"}
+                    ballCount={submissions.length}
                     isDebug={false}
                     onRotate={onBingoMachineRotate}
                 />
