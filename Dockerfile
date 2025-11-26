@@ -1,4 +1,4 @@
-FROM node:25-bullseye-slim AS builder
+FROM node:23-slim AS builder
 WORKDIR /app
 
 WORKDIR /app/server
@@ -12,7 +12,7 @@ RUN npm ci
 RUN npm run build
 
 # Final image
-FROM node:25-bullseye-slim
+FROM node:23-slim
 WORKDIR /app
 
 COPY --from=builder /app/server/dist ./server/dist

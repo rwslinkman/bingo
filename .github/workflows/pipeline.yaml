@@ -26,8 +26,13 @@ jobs:
       - name: Install client dependencies
         run: cd client && npm ci && npm test
 
-      - name: Sample Docker Build
-        run: docker build .
+      - name: Sample Multi-Arch Image Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
 
   release:
     name: Semantic Release
