@@ -6,7 +6,8 @@ import SubmissionsList from "./components/SubmissionsList";
 import Modal from "./components/Modal";
 
 // connect to same origin
-const socket = io("http://localhost:3000");
+const socket = io(`${window.location.protocol}//${window.location.hostname}${window.location.port ? `:${window.location.port}` : ''}`);
+
 
 function randomPlayerName() {
     return `Player${Math.floor(Math.random() * 900 + 100)}`

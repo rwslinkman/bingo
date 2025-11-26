@@ -13,7 +13,7 @@ This document contains a complete, ready-to-run project scaffold for a **single-
 ## Project file tree
 
 ````
-/dutch-bingo
+/bingo
 ├── .github/
 │   └── workflows/ci.yml
 ├── client/
@@ -97,8 +97,8 @@ The React dev server runs on **[http://localhost:3000](http://localhost:3000)** 
 Build and run the single container:
 
 ```bash
-docker build -t dutch-bingo:latest .
-docker run --rm -p 3000:3000 dutch-bingo:latest
+docker build -t bingo:latest .
+docker run --rm -p 3000:3000 bingo:latest
 ```
 
 Open:
