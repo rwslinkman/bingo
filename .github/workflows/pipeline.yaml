@@ -18,12 +18,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 23
 
       - name: Run server tests
         run: cd server && npm ci && npm test
 
-      - name: Install client dependencies
+      - name: Run client tests
         run: cd client && npm ci && npm test
 
       - name: Sample Multi-Arch Image Build
