@@ -1,17 +1,21 @@
-// client/src/App.jsx
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useRef, useState} from "react";
 import { io } from "socket.io-client";
 import BingoMachine from "./components/BingoMachine";
-import CardReveal from "./components/CardReveal";
+import PlayersList from "./components/PlayersList";
+import SubmissionsList from "./components/SubmissionsList";
+import Modal from "./components/Modal";
 
 // connect to same origin
-const socket = io("http://localhost:3000");
+const socket = io(`${window.location.protocol}//${window.location.hostname}${window.location.port ? `:${window.location.port}` : ''}`);
+
 
 function randomPlayerName() {
     return `Player${Math.floor(Math.random() * 900 + 100)}`
 }
 
 export default function App() {
+    const bingoRef = useRef(null);
+    const MemoBingoMachine = React.memo(BingoMachine);
     // join / identity
     const [roomId, setRoomId] = useState("");
     const [roomName, setRoomName] = useState("room-1");
@@ -23,14 +27,19 @@ export default function App() {
     const [gameType, setGameType] = useState("cardpicker")
     const [players, setPlayers] = useState([]);
     const [submissions, setSubmissions] = useState([]);
-    const [isLeader, setIsLeader] = useState(false);
-
-    // spin / reveal
-    const [lastChosenId, setLastChosenId] = useState(null);
-    const [revealedCard, setRevealedCard] = useState(null);
+    const [completedSubmissions, setCompletedSubmissions] = useState([]);
+    const isLeaderRef = useRef(false);
+    // modal
+    const [modalContent, setModalContent] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // set up socket listeners once
     useEffect(() => {
+        const parts = window.location.pathname.split("/");
+        if (parts[1] === "room" && parts[2]) {
+            setRoomName(parts[2]);   // Prefill room name
+        }
+
         socket.on("connect", () => {
             // noop for now
             console.log("connected to websocket server");
@@ -39,54 +48,79 @@ export default function App() {
         socket.on("room_update", (payload) => {
             if (!payload) return;
 
-            console.log(payload);
-            setRoomId(payload.id)
-            setRoomName(payload.roomName)
-            setGameType(payload.gameType)
-            setIsLeader(Boolean(payload.leader));
+            setRoomId(payload.id);
+            setRoomName(payload.roomName);
+            setGameType(payload.gameType);
+            isLeaderRef.current = socket.id === payload.leader;
             setPlayers(payload.players || []);
             setSubmissions(payload.balls || []);
+            setCompletedSubmissions(payload.revealedBalls || []);
             setState(payload.state)
-
-            console.log(submissions);
         });
 
-        socket.on("spin_started", ({ chosenId }) => {
-            // server told us which card will be revealed (so clients can sync animation)
-            setLastChosenId(chosenId);
-            // clear previous reveal so overlay can re-open
-            setRevealedCard(null);
+        socket.on("bingo_rotation", (payload) => {
+            if(!payload || isLeaderRef.current) {
+                return;
+            }
+            bingoRef.current.updateAngle(payload.currentAngle, payload.totalRotations);
         });
 
-        socket.on("reveal_card", ({ card }) => {
-            // card: { id, name, content }
-            setRevealedCard(card);
+        socket.on("item_reveal", (payload) => {
+            if (!payload) return;
+
+            if(isLeaderRef.current) {
+                // Stop dragging before modal appears to stop explosion of rotate events
+                bingoRef.current.disableDrag();
+            }
+
+            // data can be anything: string, object, JSX
+            setModalContent(
+                <div>
+                    <h2>🎉 An item was drawn from the Bingo machine!</h2>
+                    <p>{payload.content}</p>
+                    <p style={{ fontSize: "12pt" }}>Submitted by: {payload.submitter}</p>
+                </div>
+            );
+            setIsModalOpen(true);
         });
+
+        socket.on("game_ended", (_) => {
+            // data can be anything: string, object, JSX
+            setModalContent(
+                <div>
+                    <h2>The bingo game has ended!</h2>
+                    <p>Thank you for playing</p>
+                </div>
+            );
+            setIsModalOpen(true);
+        })
 
         // clean up on unmount
         return () => {
             socket.off("connect");
             socket.off("room_update");
-            socket.off("spin_started");
-            socket.off("reveal_card");
+            socket.off("bingo_rotation");
         };
     }, []);
 
     // join room and register name
     const joinRoom = () => {
         if (!roomName.trim() || !name.trim()) return;
-        console.log(roomName)
-        console.log(name)
-        socket.emit("join_room", { roomName, playerName: name }, (res) => {
+        const payload = { roomName, playerName: name };
+        socket.emit("join_room", payload, (res) => {
             if (res && res.ok) {
                 setJoined(true);
                 setRoomId(res.room.id)
                 setRoomName(res.room.roomName)
                 setGameType(res.room.gameType)
-                setIsLeader(Boolean(res.room.leader));
+                isLeaderRef.current = socket.id === res.room.leader
                 setPlayers(res.room.players || []);
                 setSubmissions(res.room.balls || []);
-                setState(res.room.state)
+                setCompletedSubmissions(payload.revealedBalls || []);
+                setState(res.room.state);
+
+                // Update browser URL
+                window.history.pushState({}, "", `/room/${roomName}`);
             } else {
                 alert((res && res.error) || "Failed to join room");
             }
@@ -97,30 +131,32 @@ export default function App() {
     const submitCard = (content) => {
         const trimmed = (content || "").trim();
         if (!trimmed) return;
-        socket.emit("submit_item", { roomId: roomId, content: trimmed }, (res) => {
+        const payload = {roomId: roomId, content: trimmed};
+        socket.emit("submit_item", payload, (res) => {
             if (!res || !res.ok) {
                 alert((res && res.error) || "Failed to submit card");
             }
         });
     };
 
-    // leader starts spin — server chooses card and broadcasts
-    const startSpin = () => {
-        if (!isLeader) return;
-        socket.emit("start_spin", { roomId: roomId }, (res) => {
-            if (res && !res.ok) {
-                alert(res.error || "Failed to start spin");
-            }
-        });
-    };
-
     const startRound = () => {
-        if (!isLeader) return;
-        socket.emit("start_game", { roomId: roomId }, (res) => {
+        if (!isLeaderRef.current) return;
+        const payload = { roomId: roomId };
+        socket.emit("start_game", payload, (res) => {
             if (res && !res.ok) {
                 alert(res.error || "Failed to start game");
             }
         })
+    }
+
+    const closeGame = () => {
+        if (!isLeaderRef.current) return;
+        const payload = { roomId: roomId };
+        socket.emit("close_game", payload, (res) => {
+            if (res && !res.ok) {
+                alert(res.error || "Failed to close game");
+            }
+        });
     }
 
     // simple submit handler for Enter key in input
@@ -130,6 +166,11 @@ export default function App() {
             submitCard(e.target.value);
             e.target.value = "";
         }
+    };
+
+    const onBingoMachineRotate = (state) => {
+        const payload = { roomId: roomId, angle: state.angle, rotations: state.rotations }
+        socket.emit("bingo_rotate", payload);
     };
 
     if (!joined) {
@@ -164,32 +205,27 @@ export default function App() {
                     <strong>RoomID:</strong> {roomId} <br/>
                     <strong>Type:</strong> {gameType} <br/>
                     <strong>State:</strong> {state} <br/>
-                    <strong>You:</strong> {name} {isLeader ? " (leader)" : ""}
+                    <strong>You:</strong> {name} {isLeaderRef.current ? " (leader)" : ""}
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <button onClick={startRound} disabled={!isLeader || submissions.length === 0 || state !== "waiting" } style={{ padding: "8px 12px" }}>
-                        {isLeader ? "Start game (leader)" : "Waiting for leader"}
+                    <button onClick={startRound} disabled={!isLeaderRef.current || submissions.length === 0 || state !== "waiting" } style={{ padding: "8px 12px" }}>
+                        {isLeaderRef.current ? "Start game (leader)" : "Waiting for leader"}
+                    </button>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                    <button onClick={closeGame} disabled={!isLeaderRef.current || state !== "finished" } style={{ padding: "8px 12px" }}>
+                        {isLeaderRef.current ? "End game (leader)" : "Waiting for leader"}
                     </button>
                 </div>
 
-                <section style={{ marginBottom: 12 }}>
-                    <h3>Players</h3>
-                    <ul>
-                        {players.map((p, i) => (
-                            <li key={i}>{p.name} {p.isLeader ? " (leader)" : ""}</li>
-                        ))}
-                    </ul>
-                </section>
-
-                <section style={{ marginBottom: 12 }}>
-                    <h3>Submitted cards</h3>
-                    <ul>
-                        {submissions.map((s, i) => (
-                            <li key={i}>{s.content}</li>
-                        ))}
-                    </ul>
-                </section>
+                <PlayersList
+                    players={players}
+                />
+                <SubmissionsList
+                    submissions={submissions}
+                    completed={completedSubmissions}
+                />
 
                 { state === "waiting" ?
                 (<section>
@@ -201,15 +237,20 @@ export default function App() {
             </aside>
 
             <main style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {/* BingoMachine receives the server-chosen id as trigger so it can play the animation */}
-                <BingoMachine trigger={lastChosenId} />
+                <MemoBingoMachine
+                    ref={bingoRef}
+                    canControl={isLeaderRef.current && state === "running"}
+                    ballCount={submissions.length}
+                    isDebug={false}
+                    onRotate={onBingoMachineRotate}
+                />
 
-                {/*/!* Reveal overlay *!/*/}
-                {/*{revealedCard && (*/}
-                {/*    <div style={{ position: "absolute", right: 24, top: 24 }}>*/}
-                {/*        <CardReveal card={revealedCard} />*/}
-                {/*    </div>*/}
-                {/*)}*/}
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                >
+                    {modalContent}
+                </Modal>
             </main>
         </div>
     );

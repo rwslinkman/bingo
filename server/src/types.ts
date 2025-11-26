@@ -8,6 +8,7 @@ export interface Submission {
     socketId: string;
     content: string;
     submitter: string;
+    type: "bingoball" | "jira-ticket" | "unknown";
 }
 
 export interface BingoBall {
@@ -23,7 +24,9 @@ export interface RoomState {
     players: Record<string, PlayerInfo>;
     submissions: Submission[];
     completed: Submission[];
-    state: "waiting" | "running" | "finished";
+    state: "waiting" | "running" | "finished" | "closed";
+    currentAngle: number;
+    totalRotations: number;
 }
 
 export interface RoomStatus {
@@ -32,8 +35,11 @@ export interface RoomStatus {
     gameType: "default" | "cardpicker";
     leader: string | null;
     players: PlayerInfo[];
-    balls: BingoBall[]
-    state: "waiting" | "running" | "finished";
+    balls: BingoBall[];
+    revealedBalls: BingoBall[];
+    currentAngle: number;
+    totalRotations: number;
+    state: "waiting" | "running" | "finished" | "closed";
 }
 
 export interface SocketResponse {
@@ -56,4 +62,10 @@ export interface SubmitItemPayload {
 
 export interface StartGamePayload {
     roomId: string;
+}
+
+export interface BingoRotationPayload {
+    roomId: string,
+    angle: number;
+    rotations: number;
 }

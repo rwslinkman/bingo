@@ -2,10 +2,12 @@ import express, { Request, Response } from "express";
 import http from "node:http";
 import { Server, Socket } from "socket.io";
 import path from "node:path";
-import {SocketCallback, JoinRoomPayload, RoomState, Submission, SubmitItemPayload, StartGamePayload} from "./types";
+import {
+    SocketCallback, JoinRoomPayload, RoomState, Submission, SubmitItemPayload, StartGamePayload,
+    BingoRotationPayload
+} from "./types";
 import { v6 as uuidv6 } from 'uuid';
-import {roomStateToStatus} from "./helper";
-
+import {roomStateToStatus, takeRandom} from "./helper";
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +15,7 @@ const io = new Server(server, {
     cors: { origin: "*" }
 });
 
+const ROTATIONS_NEEDED = 5;
 const rooms = new Map<string, RoomState>();
 
 function createRoom(name: string, leaderSocketId: string | null) {
@@ -25,6 +28,8 @@ function createRoom(name: string, leaderSocketId: string | null) {
         players: {},
         submissions: [],
         completed: [],
+        currentAngle: 0,
+        totalRotations: 0,
         state: "waiting"
     };
     rooms.set(roomId, room);
@@ -46,12 +51,9 @@ function ensureRoom(id: string): RoomState {
     return rooms.get(id)!;
 }
 
-// ---------------- SOCKET.IO ----------------
-
 io.on("connection", (socket: Socket) => {
     console.log("conn", socket.id);
 
-    // --- JOIN ROOM ---
     socket.on("join_room", (payload: JoinRoomPayload, cb?: SocketCallback) => {
         const { roomName, playerName } = payload;
         const room = ensureRoomByName(roomName);
@@ -76,7 +78,8 @@ io.on("connection", (socket: Socket) => {
             id: uuidv6(),
             socketId: socket.id,
             content: payload.content,
-            submitter: room.players[socket.id]?.name ?? "Anon"
+            submitter: room.players[socket.id]?.name ?? "Anon",
+            type: "unknown"
         };
         room.submissions.push(entry);
 
@@ -106,50 +109,72 @@ io.on("connection", (socket: Socket) => {
         cb?.({ ok: true, room: roomData });
     });
 
-    // // --- START SPIN ---
-    // socket.on(
-    //     "start_spin",
-    //     ({ roomId }: { roomId: string }, cb?: Function) => {
-    //         const room = ensureRoom(roomId);
-    //
-    //         if (room.leader !== socket.id)
-    //             return cb?.({ ok: false, error: "not leader" });
-    //
-    //         if (room.submissions.length === 0)
-    //             return cb?.({ ok: false, error: "no cards" });
-    //
-    //         const remaining = room.submissions.filter(
-    //             (s) => !room.drawn.includes(s.id)
-    //         );
-    //         if (remaining.length === 0) {
-    //             room.drawn = [];
-    //         }
-    //
-    //         const pool = room.submissions.filter(
-    //             (s) => !room.drawn.includes(s.id)
-    //         );
-    //
-    //         const chosen = pool[Math.floor(Math.random() * pool.length)];
-    //         room.drawn.push(chosen.id);
-    //
-    //         // Notify clients to start spinning animation
-    //         io.to(roomId).emit("spin_started", { chosenId: chosen.id });
-    //
-    //         setTimeout(() => {
-    //             io.to(roomId).emit("reveal_card", {
-    //                 card: {
-    //                     id: chosen.id,
-    //                     name: chosen.name,
-    //                     content: chosen.content
-    //                 }
-    //             });
-    //         }, 2200);
-    //
-    //         cb?.({ ok: true, chosenId: chosen.id });
-    //     }
-    // );
+    socket.on("close_game", (payload: StartGamePayload, cb?: SocketCallback)=> {
+        const room = ensureRoom(payload.roomId);
 
-    // --- DISCONNECT ---
+        if(room.state != "finished") {
+            return cb?.({ ok: false, error: "game not in finished state" });
+        }
+        if (room.leader !== socket.id) {
+            return cb?.({ok: false, error: "not leader"});
+        }
+
+        room.state = "closed";
+
+        const roomData = roomStateToStatus(room)
+        io.to(room.id).emit("game_ended", roomData);
+        io.to(room.id).emit("room_update", roomData);
+        cb?.({ ok: true, room: roomData });
+    });
+
+    socket.on("bingo_rotate", (payload: BingoRotationPayload, cb?: SocketCallback)=> {
+        const room = ensureRoom(payload.roomId);
+
+        if(room.state != "running") {
+            return cb?.({ ok: false, error: "game not in running state" });
+        }
+        if (room.leader !== socket.id) {
+            return cb?.({ ok: false, error: "not leader" });
+        }
+
+        room.currentAngle = payload.angle;
+        if(payload.rotations > 0) {
+            room.totalRotations++;
+        }
+
+        if(room.totalRotations >= ROTATIONS_NEEDED) {
+            room.totalRotations = 0;
+
+            // Take ball and reveal content
+            const ballPicked = takeRandom(room.submissions);
+            room.completed.push(ballPicked);
+
+            // Emit revealed item
+            const eventData = {
+                type: ballPicked.type,
+                content: ballPicked.content,
+                submitter: ballPicked.submitter
+            }
+            io.to(room.id).emit("item_reveal", eventData)
+
+            if(room.submissions.length === 0) {
+                // Game ends when room.submissions is empty
+                room.state = "finished";
+            }
+            const roomData = roomStateToStatus(room)
+            io.to(room.id).emit("room_update", roomData);
+        }
+
+        const rotationBroadcast = {
+            currentAngle: room.currentAngle,
+            totalRotations: room.totalRotations
+        }
+        io.to(room.id).emit("bingo_rotation", rotationBroadcast);
+        const roomData = roomStateToStatus(room);
+
+        cb?.({ ok: true, room: roomData });
+    });
+
     socket.on("disconnecting", () => {
         for (const roomId of socket.rooms) {
             if (roomId === socket.id) continue;
@@ -170,16 +195,13 @@ io.on("connection", (socket: Socket) => {
 });
 
 // ---------------- EXPRESS STATIC FILES ----------------
-
-app.use(express.static(path.join(__dirname, "..", "client", "dist")));
+app.use(express.static(path.join(__dirname, "..", "..", "client", "dist")));
 
 app.get("/", (_: Request, res: Response) => {
     res.sendFile(path.join(__dirname, "..", "client", "dist", "index.html"));
 });
 
-// ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => {
     console.log("Server listening on", PORT);
 });
