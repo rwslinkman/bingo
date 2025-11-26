@@ -1,9 +1,6 @@
-// client/src/App.jsx
 import React, {useEffect, useRef, useState} from "react";
 import { io } from "socket.io-client";
 import BingoMachine from "./components/BingoMachine";
-import CardReveal from "./components/CardReveal";
-import {throttle} from "lodash/function";
 import PlayersList from "./components/PlayersList";
 import SubmissionsList from "./components/SubmissionsList";
 import Modal from "./components/Modal";
@@ -37,6 +34,11 @@ export default function App() {
 
     // set up socket listeners once
     useEffect(() => {
+        const parts = window.location.pathname.split("/");
+        if (parts[1] === "room" && parts[2]) {
+            setRoomName(parts[2]);   // Prefill room name
+        }
+
         socket.on("connect", () => {
             // noop for now
             console.log("connected to websocket server");
@@ -113,7 +115,11 @@ export default function App() {
                 isLeaderRef.current = socket.id === res.room.leader
                 setPlayers(res.room.players || []);
                 setSubmissions(res.room.balls || []);
-                setState(res.room.state)
+                setCompletedSubmissions(payload.revealedBalls || []);
+                setState(res.room.state);
+
+                // Update browser URL
+                window.history.pushState({}, "", `/room/${roomName}`);
             } else {
                 alert((res && res.error) || "Failed to join room");
             }
