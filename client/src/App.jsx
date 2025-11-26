@@ -57,13 +57,19 @@ export default function App() {
             if(!payload || isLeaderRef.current) {
                 return;
             }
+            console.log('rotate event for observer');
             bingoRef.current.updateAngle(payload.currentAngle, payload.totalRotations);
         });
 
         socket.on("item_reveal", (payload) => {
             if (!payload) return;
-
             console.log(payload);
+
+            if(isLeaderRef.current) {
+                // Stop dragging before modal appears to stop explosion of rotate events
+                bingoRef.current.disableDrag();
+            }
+
             // data can be anything: string, object, JSX
             setModalContent(
                 <div>
@@ -137,6 +143,7 @@ export default function App() {
     const onBingoMachineRotate = (state) => {
         const payload = { roomId: roomId, angle: state.angle, rotations: state.rotations }
         socket.emit("bingo_rotate", payload);
+        console.log("rotation emitted")
     };
 
     if (!joined) {

@@ -110,6 +110,8 @@ io.on("connection", (socket: Socket) => {
     });
 
     socket.on("bingo_rotate", (payload: BingoRotationPayload, cb?: SocketCallback)=> {
+        console.log("rotate event");
+
         const room = ensureRoom(payload.roomId);
 
         if(room.state != "running") {

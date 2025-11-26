@@ -61,7 +61,6 @@ const BingoMachine = forwardRef(function BingoMachine({ballCount, canControl, on
     useImperativeHandle(ref, () => ({
         updateAngle: (newAngle, newRotationCount) => {
             angleRef.current = newAngle;
-            // rotationCountRef.current = newRotationCount;
 
             // Energize balls based on the new knob rotation
             // Only if balls exist (they are stored in ballsRef)
@@ -84,6 +83,9 @@ const BingoMachine = forwardRef(function BingoMachine({ballCount, canControl, on
                     }
                 });
             }
+        },
+        disableDrag: () => {
+            draggingRef.current = false;
         }
     }));
 
@@ -277,7 +279,7 @@ const BingoMachine = forwardRef(function BingoMachine({ballCount, canControl, on
                 // NEW: energize, but with safer params
                 energizeBalls(ballsRef.current, drumCenter, drumRadius, {
                     tangentialStrength: 0.0012,  // stronger push around the circle
-                    inwardStrength: 0.00005,     // VERY tiny inward nudge
+                    inwardStrength: 0.00002,     // VERY tiny inward nudge
                     avoidNearWallPx: 22          // avoid pushing when too close
                 });
                 const MAX_SPEED = 20;
